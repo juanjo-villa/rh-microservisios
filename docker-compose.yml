@@ -1,0 +1,203 @@
+services:
+  # ------------------------- NGINX (Proxy inverso) -------------------------
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: nginx-proxy
+    ports:
+      - "80:80" # Exposición del puerto 80 en el host
+    depends_on:
+      - frontend # Service name (matches the service key in docker-compose.yml)
+      - employee-service
+      - payroll-service
+      - performance-service
+      - schedule-service
+      - adminer-cra
+    networks:
+      - app-network-cra
+
+  # ------------------------- FRONTEND (React) -------------------------
+  frontend:
+    build:
+      context: ./frontend/interface
+      dockerfile: Dockerfile
+    container_name: react-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_URL=http://nginx-proxy # Nginx actúa como API Gateway
+    depends_on:
+      - employee-db
+      - payroll-db
+      - performance-db
+      - schedule-db
+    networks:
+      - app-network-cra
+    # ------------------------- MICROSERVICIOS -------------------------
+  employee-service:
+    build:
+      context: ./backend/employee-service
+      dockerfile: Dockerfile
+    container_name: employee-service
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://employee-db:5432/employee_db
+      - SPRING_DATASOURCE_USERNAME=employee_user
+      - SPRING_DATASOURCE_PASSWORD=employee_pass
+    ports:
+      - "8005:8080"
+    depends_on:
+      employee-db:
+        condition: service_healthy
+    networks:
+      - app-network-cra
+
+  payroll-service:
+    build:
+      context: ./backend/payroll-service
+      dockerfile: Dockerfile
+    container_name: payroll-service
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://payroll-db:5432/payroll_db
+      - SPRING_DATASOURCE_USERNAME=payroll_user
+      - SPRING_DATASOURCE_PASSWORD=payroll_pass
+    ports:
+      - "8006:8081"
+    depends_on:
+      payroll-db:
+        condition: service_healthy
+    networks:
+      - app-network-cra
+
+  performance-service:
+    build:
+      context: ./backend/performance-service
+      dockerfile: Dockerfile
+    container_name: performance-service
+    environment:
+      - DB_HOST=performance-db
+      - PERFORMANCE_SERVICE_DB_PORT=5432
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://performance-db:5432/performance_db
+      - SPRING_DATASOURCE_USERNAME=performance_user
+      - SPRING_DATASOURCE_PASSWORD=performance_pass
+      - EMPLOYEE_SERVICE_URL=http://employee-service:8080
+    ports:
+      - "8007:8082"
+    depends_on:
+      performance-db:
+        condition: service_healthy
+    networks:
+      - app-network-cra
+
+  schedule-service:
+    build:
+      context: ./backend/schedule-service
+      dockerfile: Dockerfile
+    container_name: schedule-service
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://schedule-db:5432/schedule_db
+      - SPRING_DATASOURCE_USERNAME=schedule_user
+      - SPRING_DATASOURCE_PASSWORD=schedule_pass
+    ports:
+      - "8008:8083"
+    depends_on:
+      schedule-db:
+        condition: service_healthy
+    networks:
+      - app-network-cra
+    # ------------------------- BASES DE DATOS --------------------------
+  employee-db:
+    image: postgres:15
+    container_name: employee-db
+    environment:
+      POSTGRES_DB: employee_db
+      POSTGRES_USER: employee_user
+      POSTGRES_PASSWORD: employee_pass
+    volumes:
+      - ./PostgreSQL/employee/data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network-cra
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U employee_user" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  payroll-db:
+    image: postgres:15
+    container_name: payroll-db
+    environment:
+      POSTGRES_DB: payroll_db
+      POSTGRES_USER: payroll_user
+      POSTGRES_PASSWORD: payroll_pass
+    volumes:
+      - ./PostgreSQL/payroll/data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - app-network-cra
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U payroll_user" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  performance-db:
+    image: postgres:15
+    container_name: performance-db
+    environment:
+      POSTGRES_DB: performance_db
+      POSTGRES_USER: performance_user
+      POSTGRES_PASSWORD: performance_pass
+    volumes:
+      - ./PostgreSQL/performance_s/data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    networks:
+      - app-network-cra
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U performance_user" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  schedule-db:
+    image: postgres:15
+    container_name: schedule-db
+    environment:
+      POSTGRES_DB: schedule_db
+      POSTGRES_USER: schedule_user
+      POSTGRES_PASSWORD: schedule_pass
+    volumes:
+      - ./PostgreSQL/schedule/data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - app-network-cra
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U schedule_user" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # --------------------------------------------
+  adminer-cra:
+    image: adminer
+    container_name: adminer-cra
+    depends_on:
+      - employee-db
+      - payroll-db
+      - performance-db
+      - schedule-db
+    ports:
+      - "8010:8080"
+    networks:
+      - app-network-cra
+
+# --------------------------------------------
+networks:
+  app-network-cra:
+    driver: bridge
+    name: app-network-cra
